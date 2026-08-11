@@ -69,6 +69,7 @@ def generate_ozon_label(
         'write_text': False
     }
 
+
     try:
         code_class = barcode.get_barcode_class('code128')
         ozon_code = code_class(clean_code, writer=writer)
@@ -77,6 +78,15 @@ def generate_ozon_label(
         ozon_code.write(img_buffer, options=options)
         img_buffer.seek(0)
         barcode_img = Image.open(img_buffer)
+        
+        # === НОВЫЙ КОД: Обрезаем нижний отступ штрихкода ===
+        # Code 128 имеет технический отступ снизу ~5-8% высоты картинки
+        # Обрезаем 7% снизу, чтобы текст OZN прижался вплотную
+        w_px, h_px = barcode_img.size
+        crop_pixels = int(h_px * 0.07)  # 7% высоты
+        if crop_pixels > 0:
+            barcode_img = barcode_img.crop((0, 0, w_px, h_px - crop_pixels))
+        # ================================================
         
     except Exception as e:
         print(f"Ошибка генерации штрихкода: {e}")
@@ -116,12 +126,12 @@ def generate_ozon_label(
     img_reader = ImageReader(img_buffer)
     c.drawImage(img_reader, draw_x_pt, draw_y_pt, width=draw_w_pt, height=draw_h_pt)
     
-    gap_after_barcode = 0.05 if h <= 30 else 1.0
+    gap_after_barcode = -1.2 if h <= 30 else 1.0
     current_y_mm = current_y_mm - draw_height_mm - gap_after_barcode
     
     # --- Рисуем Текст (Код OZN...) ---
     c.setFont("Helvetica", fsc) 
-    code_text_width_pt = c.stringWidth(clean_code, "Helvetica-Bold", fsc)
+    code_text_width_pt = c.stringWidth(clean_code, "Helvetica", fsc)
     code_x_pt = (page_width - code_text_width_pt) / 2
     
     text_y_pt = (current_y_mm - (fsc * 0.35)) * mm_to_pt

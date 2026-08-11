@@ -8,7 +8,7 @@ LABEL_PRESETS = {
         "margin_bottom_mm": 0.5,
         "margin_left_mm": 1.0,
         "margin_right_mm": 1.0,
-        "barcode_height_mm": 15.0, 
+        "barcode_height_mm": 17.0, 
         "font_size_code": 7,
         "font_size_desc": 3,
         "module_width": 0.3 
