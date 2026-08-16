@@ -8,13 +8,14 @@ from PIL import Image
 import io
 import os
 import re
+import logging
 from presets import LABEL_PRESETS
 
-# --- КОНФИГУРАЦИЯ ПУТЕЙ ---
+logger = logging.getLogger(__name__)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONTS_DIR = os.path.join(BASE_DIR, "fonts")
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
-
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def sanitize_filename(name: str) -> str:
@@ -23,22 +24,13 @@ def sanitize_filename(name: str) -> str:
     name = re.sub(r'_+', '_', name)
     return name[:50].strip('_') or "label"
 
-def generate_ozon_label(
-    code_data: str,
-    product_name: str,
-    preset_name: str = "Компактная 43x25",
-    **overrides
-):
-    """
-    Генерирует PDF этикетку с Code 128.
-    """
+def generate_ozon_label(code_data, product_name, preset_key, **overrides):
+    logger.info(f"Начало генерации для {code_data} (пресет: {preset_key})")
     
-    if preset_name not in LABEL_PRESETS:
-        raise ValueError(f"Неизвестный пресет '{preset_name}'. Доступны: {list(LABEL_PRESETS.keys())}")
+    if preset_key not in LABEL_PRESETS:
+        raise ValueError(f"Неизвестный пресет '{preset_key}'")
     
-    config = LABEL_PRESETS[preset_name].copy()
-    
-    # Применяем переопределения из GUI
+    config = LABEL_PRESETS[preset_key].copy()
     for key, value in overrides.items():
         if value is not None and key in config:
             config[key] = value
@@ -55,11 +47,8 @@ def generate_ozon_label(
     mw = config['module_width']
 
     clean_code = code_data.upper().strip()
-    
     if not all(32 <= ord(c) <= 126 for c in clean_code):
         raise ValueError("Code 128 поддерживает только печатные ASCII символы")
-
-    print(f"Генерация Code 128 [{preset_name}] для: {clean_code} ({w}x{h} мм)")
 
     writer = ImageWriter()
     options = {
@@ -68,7 +57,6 @@ def generate_ozon_label(
         'quiet_zone': 0,        
         'write_text': False
     }
-
 
     try:
         code_class = barcode.get_barcode_class('code128')
@@ -79,17 +67,14 @@ def generate_ozon_label(
         img_buffer.seek(0)
         barcode_img = Image.open(img_buffer)
         
-        # === НОВЫЙ КОД: Обрезаем нижний отступ штрихкода ===
-        # Code 128 имеет технический отступ снизу ~5-8% высоты картинки
-        # Обрезаем 7% снизу, чтобы текст OZN прижался вплотную
+        # Обрезка нижнего отступа (твоя фишка)
         w_px, h_px = barcode_img.size
-        crop_pixels = int(h_px * 0.07)  # 7% высоты
+        crop_pixels = int(h_px * 0.07)
         if crop_pixels > 0:
             barcode_img = barcode_img.crop((0, 0, w_px, h_px - crop_pixels))
-        # ================================================
-        
+            
     except Exception as e:
-        print(f"Ошибка генерации штрихкода: {e}")
+        logger.error(f"Ошибка генерации штрихкода: {e}")
         return None
 
     mm_to_pt = 2.83465
@@ -105,7 +90,7 @@ def generate_ozon_label(
     left_x_mm = ml
     available_width_mm = w - ml - mr
     
-    # --- Рисуем Штрихкод ---
+    # Рисуем Штрихкод
     img_w_px, img_h_px = barcode_img.size
     aspect_ratio = img_w_px / img_h_px
     
@@ -126,10 +111,11 @@ def generate_ozon_label(
     img_reader = ImageReader(img_buffer)
     c.drawImage(img_reader, draw_x_pt, draw_y_pt, width=draw_w_pt, height=draw_h_pt)
     
+    # Отступ после штрихкода (твой параметр -1.2 для прижатия)
     gap_after_barcode = -1.2 if h <= 30 else 1.0
     current_y_mm = current_y_mm - draw_height_mm - gap_after_barcode
     
-    # --- Рисуем Текст (Код OZN...) ---
+    # Текст кода
     c.setFont("Helvetica", fsc) 
     code_text_width_pt = c.stringWidth(clean_code, "Helvetica", fsc)
     code_x_pt = (page_width - code_text_width_pt) / 2
@@ -141,9 +127,8 @@ def generate_ozon_label(
     line_height_code_mm = (fsc * 0.35) + gap_after_code
     current_y_mm = current_y_mm - line_height_code_mm
     
-    # --- Рисуем Описание товара ---
+    # Описание товара
     font_name = "Helvetica"
-    
     local_arial = os.path.join(FONTS_DIR, "arial.ttf")
     sys_arial = r"C:\Windows\Fonts\arial.ttf"
     local_dejavu = os.path.join(FONTS_DIR, "DejaVuSans.ttf")
@@ -195,5 +180,5 @@ def generate_ozon_label(
         current_y_mm = current_y_mm - line_height_desc_mm
         
     c.save()
-    print(f"✅ Этикетка сохранена: {output_filename}")
+    logger.info(f"Сохранено: {output_filename}")
     return output_filename
